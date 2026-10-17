@@ -1,4 +1,4 @@
-.local/
+
 node_modules/
 dist/
-build/
+.local/
