@@ -321,13 +321,13 @@ export default function AdminBookings() {
       <ConfirmDialog
         open={!!approveTarget}
         busy={approving}
-        title="Approve this booking?"
+        title="Confirm this booking?"
         message={
           approveTarget
             ? `This will approve ${approveTarget.clientName}'s booking for ${approveTarget.roomName} and notify them.`
             : ""
         }
-        confirmLabel="Yes, approve booking"
+        confirmLabel="Yes, confirm booking"
         cancelLabel="Not yet"
         onConfirm={confirmApprove}
         onCancel={() => setApproveTarget(null)}
@@ -555,7 +555,7 @@ function BookingTable({ bookings, onView, onCancel, onDelete, onApprove, onRejec
                             onClick={() => onApprove(b)}
                             className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 px-3 py-1.5 text-xs font-semibold text-emerald-600 transition hover:bg-emerald-50"
                           >
-                            Approve
+                            Confirm
                           </button>
                           <button
                             type="button"
@@ -649,7 +649,7 @@ function BookingCard({ booking: b, onView, onCancel, onDelete, onApprove, onReje
           {pendingApproval ? (
             <>
               <button type="button" onClick={onApprove} className="text-xs font-semibold text-emerald-600 hover:text-emerald-700">
-                Approve
+                Confirm
               </button>
               <button type="button" onClick={onReject} className="text-xs font-semibold text-rose-500 hover:text-rose-600">
                 Cancel
@@ -776,7 +776,7 @@ function DetailsModal({ booking, onClose, onApprove, onReject }) {
               onClick={onApprove}
               className="flex-1 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700"
             >
-              Approve
+              Confirm
             </button>
           </div>
         ) : (
