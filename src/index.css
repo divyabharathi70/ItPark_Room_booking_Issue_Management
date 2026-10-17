@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-blueprint-bg text-blueprint-text font-body antialiased;
+  }
+  ::selection {
+    @apply bg-blueprint-amber/30 text-blueprint-text;
+  }
+}
+
+@layer utilities {
+  .blueprint-grid-bg {
+    background-image: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
