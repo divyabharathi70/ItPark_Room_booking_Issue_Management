@@ -435,6 +435,21 @@ export function updateBooking(id, patch) {
   return list[idx];
 }
 
+/** Updates a batch of existing bookings with one storage write/event. */
+export function updateBookings(updates) {
+  const patches = new Map(updates.map(({ id, patch }) => [id, patch]));
+  const list = readAll();
+  let changed = false;
+  const updated = list.map((booking) => {
+    const patch = patches.get(booking.id);
+    if (!patch) return booking;
+    changed = true;
+    return { ...booking, ...patch };
+  });
+  if (changed) writeAll(updated);
+  return updated;
+}
+
 export function cancelBooking(id) {
   return updateBooking(id, { bookingStatus: BOOKING_STATUS.CANCELLED });
 }

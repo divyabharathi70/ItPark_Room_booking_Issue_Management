@@ -8,11 +8,11 @@ import { AMENITY_MAP } from "../../data/mockRooms";
 import { getRoomById } from "../../utils/roomStorage";
 import {
   getAllBookings,
+  updateBookings,
   deleteBooking,
   cancelBooking,
   approveBooking,
   rejectBooking,
-  syncCompletedBookings,
   formatDuration,
   BOOKING_STATUS,
   BOOKINGS_EVENT,
@@ -101,8 +101,22 @@ export default function AdminBookings() {
   const [toast, setToast] = useState("");
 
   function refresh() {
-    syncCompletedBookings();
-    setBookings(getAllBookings());
+    let current = getAllBookings();
+    const needsUpdate = current.some((b) =>
+      b.bookingStatus === BOOKING_STATUS.COMPLETED || b.paymentStatus === "PENDING"
+    );
+    if (needsUpdate) {
+      const updates = current.flatMap((b) => {
+        const patch = {
+          ...(b.bookingStatus === BOOKING_STATUS.COMPLETED ? { bookingStatus: BOOKING_STATUS.PENDING } : {}),
+          ...(b.paymentStatus === "PENDING" ? { paymentStatus: "PAID" } : {}),
+        };
+        return Object.keys(patch).length ? [{ id: b.id, patch }] : [];
+      });
+      // Persist in one write and broadcast once to other open views.
+      current = updateBookings(updates);
+    }
+    setBookings(current);
   }
 
   useEffect(() => {
@@ -511,9 +525,7 @@ function BookingTable({ bookings, onView, onCancel, onDelete, onApprove, onRejec
           <tbody>
             {bookings.map((b) => {
               const pendingApproval = isPendingApproval(b);
-              const cancellable =
-                !pendingApproval &&
-                (b.bookingStatus === BOOKING_STATUS.CONFIRMED || b.bookingStatus === BOOKING_STATUS.PENDING);
+              const cancelled = b.bookingStatus === BOOKING_STATUS.CANCELLED;
               return (
                 <tr
                   key={b.id}
@@ -550,6 +562,7 @@ function BookingTable({ bookings, onView, onCancel, onDelete, onApprove, onRejec
                     <div className="flex items-center justify-end gap-2">
                       {pendingApproval ? (
                         <>
+                          <button type="button" onClick={() => onView(b)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50">View</button>
                           <button
                             type="button"
                             onClick={() => onApprove(b)}
@@ -581,13 +594,14 @@ function BookingTable({ bookings, onView, onCancel, onDelete, onApprove, onRejec
                           >
                             View
                           </button>
-                          {cancellable && <button
+                          {(!cancelled) && <button
                             type="button"
                             onClick={() => onCancel(b)}
                             className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-600 transition hover:bg-rose-50"
                           >
                             Cancel
                           </button>}
+                          {cancelled && <button type="button" onClick={() => onApprove(b)} className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 px-3 py-1.5 text-xs font-semibold text-emerald-600 transition hover:bg-emerald-50">Confirm</button>}
                           <button
                             type="button"
                             onClick={() => onDelete(b)}
@@ -611,8 +625,7 @@ function BookingTable({ bookings, onView, onCancel, onDelete, onApprove, onRejec
 
 function BookingCard({ booking: b, onView, onCancel, onDelete, onApprove, onReject }) {
   const pendingApproval = isPendingApproval(b);
-  const cancellable =
-    !pendingApproval && (b.bookingStatus === BOOKING_STATUS.CONFIRMED || b.bookingStatus === BOOKING_STATUS.PENDING);
+  const cancelled = b.bookingStatus === BOOKING_STATUS.CANCELLED;
   return (
     <div className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div onClick={onView} className="mb-3 flex cursor-pointer items-start justify-between gap-2">
@@ -648,6 +661,7 @@ function BookingCard({ booking: b, onView, onCancel, onDelete, onApprove, onReje
         <div className="flex items-center gap-3">
           {pendingApproval ? (
             <>
+              <button type="button" onClick={onView} className="text-xs font-semibold text-indigo-600 hover:text-indigo-700">View</button>
               <button type="button" onClick={onApprove} className="text-xs font-semibold text-emerald-600 hover:text-emerald-700">
                 Confirm
               </button>
@@ -663,11 +677,12 @@ function BookingCard({ booking: b, onView, onCancel, onDelete, onApprove, onReje
               <button type="button" onClick={onView} className="text-xs font-semibold text-indigo-600 hover:text-indigo-700">
                 View Details
               </button>
-              {cancellable && (
+              {!cancelled && (
               <button type="button" onClick={onCancel} className="text-xs font-semibold text-rose-500 hover:text-rose-600">
                 Cancel
               </button>
               )}
+              {cancelled && <button type="button" onClick={onApprove} className="text-xs font-semibold text-emerald-600 hover:text-emerald-700">Confirm</button>}
               <button type="button" onClick={onDelete} className="text-xs font-semibold text-rose-500 hover:text-rose-600">
                 Delete
               </button>
@@ -691,6 +706,7 @@ function DetailRow({ label, value }) {
 function DetailsModal({ booking, onClose, onApprove, onReject }) {
   const room = getRoomById(booking.roomId);
   const pendingApproval = isPendingApproval(booking);
+  const cancelled = booking.bookingStatus === BOOKING_STATUS.CANCELLED;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
@@ -762,15 +778,13 @@ function DetailsModal({ booking, onClose, onApprove, onReject }) {
           </div>
         </div>
 
-        {pendingApproval ? (
+        {(pendingApproval || cancelled) ? (
           <div className="mt-6 flex items-center gap-3">
-            <button
+            {pendingApproval && <button
               type="button"
               onClick={onReject}
               className="flex-1 rounded-xl border border-rose-200 px-4 py-2.5 text-sm font-semibold text-rose-600 transition hover:bg-rose-50"
-            >
-              Cancel
-            </button>
+            >Cancel</button>}
             <button
               type="button"
               onClick={onApprove}
