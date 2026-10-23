@@ -67,7 +67,7 @@ export default function ClientDashboard() {
     [bookings] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
-  const completed = useMemo(() => bookings.filter((b) => b.bookingStatus === BOOKING_STATUS.COMPLETED), [bookings]);
+  const confirmed = useMemo(() => bookings.filter((b) => b.bookingStatus === BOOKING_STATUS.CONFIRMED), [bookings]);
   const recentIssues = useMemo(
     () => [...issues].sort((a, b) => new Date(b.createdDate) - new Date(a.createdDate)).slice(0, 3),
     [issues]
@@ -85,7 +85,7 @@ export default function ClientDashboard() {
   const stats = [
     { label: "Upcoming Bookings", value: upcoming.length, icon: "calendar", tone: "bg-indigo-50 text-indigo-600" },
     { label: "Active Bookings", value: activeNow.length, icon: "clock", tone: "bg-emerald-50 text-emerald-600" },
-    { label: "Completed Bookings", value: completed.length, icon: "checkCircle", tone: "bg-slate-100 text-slate-600" },
+    { label: "Confirmed Bookings", value: confirmed.length, icon: "checkCircle", tone: "bg-slate-100 text-slate-600" },
     { label: "Open Issues", value: openIssues.length, icon: "alert", tone: "bg-amber-50 text-amber-600" },
   ];
 

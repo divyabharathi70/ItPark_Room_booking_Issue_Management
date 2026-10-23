@@ -5,6 +5,9 @@ import { getClientByEmail, CLIENTS_EVENT } from "../utils/clientStorage";
 import { getSelfSignupUserByEmail, registerSelfSignupUser } from "../utils/selfSignupStorage";
 import { getClientAccessRole } from "../utils/clientAccess";
 import { getUserProfile, saveUserProfile } from "../utils/profileStorage";
+import { getCustomStaff, STAFF_ROLE } from "../utils/customStaffStorage";
+import { getStaffOverride, isStaffActive, isStaffDeleted } from "../utils/staffOverridesStorage";
+import { getStoredPassword, saveStoredPassword } from "../utils/passwordStorage";
 
 const AuthContext = createContext(null);
 
@@ -64,10 +67,25 @@ export function AuthProvider({ children }) {
     );
 
     if (match) {
-      if (match.password !== password) {
+      if (getStoredPassword(match.id, match.password) !== password) {
         return { ok: false, error: "Incorrect password. Please try again." };
       }
       const session = saveSession(match);
+      setUser(withSavedProfile(session));
+      return { ok: true, user: session };
+    }
+
+    const employee = getCustomStaff(STAFF_ROLE.EMPLOYEE).find((entry) =>
+      (getStaffOverride(entry.id).email || entry.email).trim().toLowerCase() === normalizedEmail
+    );
+    if (employee?.clientId) {
+      if (employee.clientId && !isStaffActive(employee.id)) {
+        return { ok: false, error: "This employee account is inactive. Contact your client administrator." };
+      }
+      if (isStaffDeleted(employee.id)) return { ok: false, error: "No account found with that email." };
+      if (getStoredPassword(employee.id, "123456") !== password) return { ok: false, error: "Incorrect password. Please try again." };
+      const override = getStaffOverride(employee.id);
+      const session = saveSession({ id: employee.id, name: override.name || employee.name, email: override.email || employee.email, role: ROLES.EMPLOYEE, organization: override.organization || employee.organization, phone: override.phone || employee.phone, clientId: employee.clientId });
       setUser(withSavedProfile(session));
       return { ok: true, user: session };
     }
@@ -77,7 +95,7 @@ export function AuthProvider({ children }) {
     // otherwise they sign in as a regular (pending) user with no dashboard.
     const selfUser = getSelfSignupUserByEmail(normalizedEmail);
     if (selfUser) {
-      if (selfUser.password !== password) {
+      if (getStoredPassword(selfUser.id, selfUser.password) !== password) {
         return { ok: false, error: "Incorrect password. Please try again." };
       }
       const session = saveSession({
@@ -96,7 +114,7 @@ export function AuthProvider({ children }) {
     // continue using the existing demo password.
     const client = getClientByEmail(normalizedEmail);
     if (client && client.approved && client.active) {
-      if (password !== ACTIVATED_CLIENT_PASSWORD) {
+      if (getStoredPassword(client.clientId, ACTIVATED_CLIENT_PASSWORD) !== password) {
         return { ok: false, error: "Incorrect password. Please try again." };
       }
       const session = saveSession({
@@ -155,6 +173,21 @@ export function AuthProvider({ children }) {
     return updated;
   }, [user]);
 
+  const changePassword = useCallback(({ currentPassword, newPassword }) => {
+    if (!user) return { ok: false, error: "Please sign in again before changing your password." };
+    const mockUser = MOCK_USERS.find((entry) => entry.id === user.id);
+    const selfUser = getSelfSignupUserByEmail(user.email);
+    const fallback = mockUser?.password || selfUser?.password || ACTIVATED_CLIENT_PASSWORD;
+    if (getStoredPassword(user.id, fallback) !== currentPassword) {
+      return { ok: false, error: "Current password is incorrect." };
+    }
+    if (!newPassword || newPassword.length < 6) {
+      return { ok: false, error: "New password must be at least 6 characters." };
+    }
+    saveStoredPassword(user.id, newPassword);
+    return { ok: true };
+  }, [user]);
+
   const value = {
     user,
     isAuthenticated: !!user,
@@ -163,6 +196,7 @@ export function AuthProvider({ children }) {
     signup,
     logout,
     updateProfile,
+    changePassword,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

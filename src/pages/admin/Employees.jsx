@@ -5,8 +5,9 @@ import PageHeader from "../../components/layout/PageHeader";
 import Icon from "../../components/icons/Icon";
 import ConfirmDialog from "../../components/booking/ConfirmDialog";
 import { MOCK_USERS, ROLES } from "../../data/mockUsers";
-import { getIssuesForEmployee, ISSUE_STATUS } from "../../utils/issueStorage";
+import { getEligibleBookingsForIssue, getIssuesForEmployee, ISSUE_STATUS } from "../../utils/issueStorage";
 import { getBookingsForClient } from "../../utils/bookingStorage";
+import { getAllClients, CLIENTS_EVENT } from "../../utils/clientStorage";
 import {
   getStaffOverride,
   isStaffActive,
@@ -16,7 +17,7 @@ import {
   updateStaffOverride,
   STAFF_OVERRIDES_EVENT,
 } from "../../utils/staffOverridesStorage";
-import { addCustomStaff, deleteCustomStaff, getCustomStaff, STAFF_ROLE } from "../../utils/customStaffStorage";
+import { addCustomStaff, deleteCustomStaff, getCustomStaff, updateCustomStaff, STAFF_ROLE } from "../../utils/customStaffStorage";
 
 const OPEN_ISSUE_STATUSES = [
   ISSUE_STATUS.OPEN,
@@ -25,9 +26,24 @@ const OPEN_ISSUE_STATUSES = [
   ISSUE_STATUS.REOPENED,
 ];
 
-const EMPTY_FILTERS = { department: "All", status: "All" };
+const EMPTY_FILTERS = { department: "All", status: "All", client: "All" };
 
-function buildEmployeeRoster() {
+function getClientDirectory() {
+  const clients = new Map();
+  MOCK_USERS.filter((u) => u.role === ROLES.CLIENT).forEach((u) => {
+    clients.set(u.id, { id: u.id, name: u.organization || u.name, email: u.email });
+  });
+  getAllClients().forEach((client) => {
+    clients.set(client.clientId, {
+      id: client.clientId,
+      name: client.company || client.name || client.email,
+      email: client.email,
+    });
+  });
+  return Array.from(clients.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function buildEmployeeRoster(clientId = null, clients = []) {
   const base = MOCK_USERS.filter((u) => u.role === ROLES.EMPLOYEE).map((u) => ({
     id: u.id,
     baseName: u.name,
@@ -36,7 +52,7 @@ function buildEmployeeRoster() {
     isCustom: false,
   }));
 
-  getCustomStaff(STAFF_ROLE.EMPLOYEE).forEach((c) => {
+  getCustomStaff(STAFF_ROLE.EMPLOYEE).filter((c) => clientId ? c.clientId === clientId : true).forEach((c) => {
     base.push({ id: c.id, baseName: c.name, baseEmail: c.email, baseOrg: c.organization, isCustom: true, custom: c });
   });
 
@@ -49,16 +65,24 @@ function buildEmployeeRoster() {
         name: override.name || entry.baseName,
         email: override.email || entry.baseEmail,
         organization: override.organization || entry.baseOrg,
+        clientId: entry.custom?.clientId || override.clientId || null,
         profilePicture: override.profilePicture || null,
       };
       const issues = getIssuesForEmployee(entry.id);
       const openIssues = issues.filter((i) => OPEN_ISSUE_STATUSES.includes(i.status));
-      const bookings = getBookingsForClient(entry.id);
+      const bookings = getBookingsForClient(employee.clientId || entry.id);
+      const rooms = employee.clientId
+        ? Array.from(new Set(getEligibleBookingsForIssue(employee.clientId).map((booking) => booking.roomName).filter(Boolean)))
+        : [];
+      const client = clients.find((item) => item.id === employee.clientId);
       return {
         employee,
         issues,
         openIssues,
         bookings,
+        rooms,
+        clientName: client?.name || (employee.clientId ? employee.clientId : "—"),
+        clientId: employee.clientId,
         active: isStaffActive(entry.id),
         phone: override.phone || entry.custom?.phone || null,
         isCustom: entry.isCustom,
@@ -66,7 +90,7 @@ function buildEmployeeRoster() {
     });
 }
 
-export default function AdminEmployees() {
+export default function AdminEmployees({ clientManaged = false }) {
   const { user } = useAuth();
   const navigate = useNavigate();
 
@@ -85,9 +109,11 @@ export default function AdminEmployees() {
   useEffect(() => {
     const bump = () => setTick((t) => t + 1);
     window.addEventListener(STAFF_OVERRIDES_EVENT, bump);
+    window.addEventListener(CLIENTS_EVENT, bump);
     window.addEventListener("storage", bump);
     return () => {
       window.removeEventListener(STAFF_OVERRIDES_EVENT, bump);
+      window.removeEventListener(CLIENTS_EVENT, bump);
       window.removeEventListener("storage", bump);
     };
   }, []);
@@ -102,14 +128,22 @@ export default function AdminEmployees() {
     setTick((t) => t + 1);
   }
 
+  const clients = useMemo(() => {
+    // eslint-disable-next-line no-unused-expressions
+    tick;
+    return getClientDirectory();
+  }, [tick]);
+
   // Employees come from the real login-account directory plus any admin
   // has added directly, with admin edits layered on top of both.
   const employees = useMemo(() => {
     // eslint-disable-next-line no-unused-expressions
     tick;
-    return buildEmployeeRoster();
+    return clientManaged
+      ? buildEmployeeRoster(user.id, clients).filter((entry) => entry.isCustom)
+      : buildEmployeeRoster(null, clients);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tick]);
+  }, [tick, clientManaged, user.id, clients]);
 
   const departments = useMemo(
     () => Array.from(new Set(employees.map((e) => e.employee.organization).filter(Boolean))).sort(),
@@ -137,6 +171,7 @@ export default function AdminEmployees() {
         const wantActive = filters.status === "Active";
         if (e.active !== wantActive) return false;
       }
+      if (!clientManaged && filters.client !== "All" && e.clientId !== filters.client) return false;
       if (!q) return true;
       return (
         e.employee.name.toLowerCase().includes(q) ||
@@ -144,9 +179,9 @@ export default function AdminEmployees() {
         (e.employee.email || "").toLowerCase().includes(q)
       );
     });
-  }, [employees, filters, query]);
+  }, [employees, filters, query, clientManaged]);
 
-  const filtersActive = query.trim() !== "" || filters.department !== "All" || filters.status !== "All";
+  const filtersActive = query.trim() !== "" || filters.department !== "All" || filters.status !== "All" || filters.client !== "All";
 
   function resetFilters() {
     setFilters(EMPTY_FILTERS);
@@ -156,7 +191,7 @@ export default function AdminEmployees() {
   function handleAddSubmit(data) {
     setBusy(true);
     setTimeout(() => {
-      addCustomStaff(STAFF_ROLE.EMPLOYEE, data);
+      addCustomStaff(STAFF_ROLE.EMPLOYEE, { ...data, clientId: clientManaged ? user.id : data.clientId });
       setBusy(false);
       setAddOpen(false);
       setToast(`${data.name} was added.`);
@@ -168,6 +203,9 @@ export default function AdminEmployees() {
     setBusy(true);
     setTimeout(() => {
       updateStaffOverride(editTarget.employee.id, patch);
+      if (editTarget.isCustom && patch.clientId !== undefined) {
+        updateCustomStaff(editTarget.employee.id, { clientId: patch.clientId });
+      }
       setBusy(false);
       setEditTarget(null);
       setToast(`${editTarget.employee.name}'s details were updated.`);
@@ -205,8 +243,8 @@ export default function AdminEmployees() {
   return (
     <div>
       <PageHeader
-        title="Employees"
-        description="Manage employee accounts and access."
+        title={clientManaged ? "My Employees" : "Employees"}
+        description={clientManaged ? "Add and manage employees who can report issues in your booked rooms." : "Manage employee accounts and access."}
         actions={
           <button
             type="button"
@@ -231,6 +269,8 @@ export default function AdminEmployees() {
         query={query}
         setQuery={setQuery}
         departments={departments}
+        clients={clients}
+        showClients={!clientManaged}
         onReset={resetFilters}
         active={filtersActive}
       />
@@ -241,10 +281,12 @@ export default function AdminEmployees() {
         <>
           <div className="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:block">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1160px] text-left text-sm">
+              <table className="w-full min-w-[1450px] text-left text-sm">
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50/60 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                     <th className="px-4 py-3">Employee</th>
+                    <th className="px-4 py-3">Client</th>
+                    <th className="px-4 py-3">Client Rooms</th>
                     <th className="px-4 py-3">Department</th>
                     <th className="px-4 py-3">Email</th>
                     <th className="px-4 py-3">Phone</th>
@@ -265,6 +307,8 @@ export default function AdminEmployees() {
                         <p className="font-medium text-slate-800">{e.employee.name}</p>
                         <p className="font-mono text-[11px] text-slate-400">{e.employee.id}</p>
                       </td>
+                      <td className="px-4 py-3 text-slate-600">{e.clientName}</td>
+                      <td className="max-w-56 px-4 py-3 text-slate-600">{e.rooms.length ? e.rooms.join(", ") : "—"}</td>
                       <td className="px-4 py-3 text-slate-600">{e.employee.organization || "—"}</td>
                       <td className="px-4 py-3 text-slate-500">{e.employee.email || "—"}</td>
                       <td className="px-4 py-3 text-slate-500">{e.phone || "—"}</td>
@@ -341,7 +385,7 @@ export default function AdminEmployees() {
         <EmployeeDetailsModal
           data={viewTarget}
           onClose={() => setViewTarget(null)}
-          onViewIssues={() => navigate("/admin/issues")}
+          onViewIssues={() => navigate(clientManaged ? "/client/issues" : "/admin/issues")}
           onEdit={() => {
             setEditTarget(viewTarget);
             setViewTarget(null);
@@ -349,12 +393,14 @@ export default function AdminEmployees() {
         />
       )}
 
-      <AddEmployeeModal open={addOpen} busy={busy} onSubmit={handleAddSubmit} onCancel={() => setAddOpen(false)} />
+      <AddEmployeeModal open={addOpen} busy={busy} clientManaged={clientManaged} clients={clients} onSubmit={handleAddSubmit} onCancel={() => setAddOpen(false)} />
 
       <EditEmployeeModal
         key={editTarget?.employee.id || "none"}
         open={!!editTarget}
         data={editTarget}
+        clientManaged={clientManaged}
+        clients={clients}
         busy={busy}
         onSubmit={handleEditSubmit}
         onCancel={() => setEditTarget(null)}
@@ -436,7 +482,7 @@ function StatCard({ icon, label, value, tone = "indigo" }) {
   );
 }
 
-function Filters({ filters, setFilters, query, setQuery, departments, onReset, active }) {
+function Filters({ filters, setFilters, query, setQuery, departments, clients, showClients, onReset, active }) {
   function set(key, value) {
     setFilters((f) => ({ ...f, [key]: value }));
   }
@@ -444,7 +490,20 @@ function Filters({ filters, setFilters, query, setQuery, departments, onReset, a
   return (
     <div className="mb-5 space-y-3">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="grid flex-1 grid-cols-2 gap-2 sm:w-72 sm:grid-cols-2">
+        <div className={`grid flex-1 gap-2 ${showClients ? "grid-cols-2 lg:grid-cols-3" : "grid-cols-2"} sm:w-72`}>
+          {showClients && (
+            <div>
+              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Client</label>
+              <select
+                value={filters.client}
+                onChange={(e) => set("client", e.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-700 outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+              >
+                <option value="All">All clients</option>
+                {clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
+              </select>
+            </div>
+          )}
           <Select
             label="Department"
             value={filters.department}
@@ -534,7 +593,7 @@ function EmptyState({ hasAny, onReset }) {
 }
 
 function EmployeeCard({ data, onView, onEdit, onToggleStatus, onDelete }) {
-  const { employee, issues, openIssues, bookings, active } = data;
+  const { employee, issues, openIssues, bookings, active, clientName, rooms } = data;
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div onClick={onView} className="mb-3 flex cursor-pointer items-start justify-between gap-2">
@@ -543,11 +602,13 @@ function EmployeeCard({ data, onView, onEdit, onToggleStatus, onDelete }) {
           <p className="font-mono text-[11px] font-semibold tracking-wide text-slate-400">{employee.id}</p>
           <h3 className="mt-0.5 truncate text-sm font-semibold text-slate-900">{employee.name}</h3>
           <p className="truncate text-xs text-slate-500">{employee.organization || "—"}</p>
+          <p className="mt-1 truncate text-xs text-indigo-600">Client: {clientName}</p>
         </div>
         <ActiveStatusBadge active={active} />
       </div>
 
       <p className="mb-3 truncate text-xs text-slate-500">{employee.email || "No email on file"}</p>
+      <p className="mb-3 text-xs text-slate-500">Client rooms: {rooms.length ? rooms.join(", ") : "—"}</p>
 
       <div className="mb-3 flex items-center justify-between text-xs text-slate-500">
         <span className="inline-flex items-center gap-1.5">
@@ -601,7 +662,7 @@ function EmployeeCard({ data, onView, onEdit, onToggleStatus, onDelete }) {
 }
 
 function EmployeeDetailsModal({ data, onClose, onViewIssues, onEdit }) {
-  const { employee, issues, openIssues, bookings, active, phone } = data;
+  const { employee, issues, openIssues, bookings, active, phone, clientName, rooms } = data;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-8">
@@ -630,6 +691,14 @@ function EmployeeDetailsModal({ data, onClose, onViewIssues, onEdit }) {
           <div className="flex items-center justify-between">
             <span className="text-slate-500">Department</span>
             <span className="font-medium text-slate-800">{employee.organization || "—"}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-slate-500">Client</span>
+            <span className="font-medium text-slate-800">{clientName}</span>
+          </div>
+          <div className="flex items-start justify-between gap-3">
+            <span className="shrink-0 text-slate-500">Client rooms</span>
+            <span className="text-right font-medium text-slate-800">{rooms.length ? rooms.join(", ") : "—"}</span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-slate-500">Email</span>
@@ -690,11 +759,12 @@ function FormField({ label, ...inputProps }) {
   );
 }
 
-function AddEmployeeModal({ open, busy, onSubmit, onCancel }) {
+function AddEmployeeModal({ open, busy, clientManaged, clients, onSubmit, onCancel }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [department, setDepartment] = useState("");
+  const [clientId, setClientId] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -703,6 +773,7 @@ function AddEmployeeModal({ open, busy, onSubmit, onCancel }) {
       setEmail("");
       setPhone("");
       setDepartment("");
+      setClientId("");
       setError("");
     }
   }, [open]);
@@ -714,7 +785,11 @@ function AddEmployeeModal({ open, busy, onSubmit, onCancel }) {
       setError("Name and email are required.");
       return;
     }
-    onSubmit({ name: name.trim(), email: email.trim(), phone: phone.trim(), organization: department.trim() });
+    if (!clientManaged && !clientId) {
+      setError("Select the client this employee belongs to.");
+      return;
+    }
+    onSubmit({ name: name.trim(), email: email.trim(), phone: phone.trim(), organization: department.trim(), clientId });
   }
 
   return (
@@ -727,9 +802,22 @@ function AddEmployeeModal({ open, busy, onSubmit, onCancel }) {
       />
       <div className="relative w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
         <h3 className="text-base font-semibold text-slate-900">Add New Employee</h3>
-        <p className="mt-1 text-xs text-slate-500">Create a new employee account for the admin directory.</p>
+        <p className="mt-1 text-xs text-slate-500">
+          {clientManaged
+            ? "Create an employee account. They can sign in with this email and the demo password 123456."
+            : "Create an employee account for a selected client."}
+        </p>
 
         <div className="mt-4 space-y-3">
+          {!clientManaged && (
+            <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+              Client
+              <select value={clientId} onChange={(e) => setClientId(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal text-slate-800 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100">
+                <option value="">Select a client…</option>
+                {clients.map((client) => <option key={client.id} value={client.id}>{client.name} · {client.email}</option>)}
+              </select>
+            </label>
+          )}
           <FormField label="Name" type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Rohan Iyer" />
           <FormField
             label="Email"
@@ -778,11 +866,12 @@ function AddEmployeeModal({ open, busy, onSubmit, onCancel }) {
   );
 }
 
-function EditEmployeeModal({ open, data, busy, onSubmit, onCancel }) {
+function EditEmployeeModal({ open, data, busy, clientManaged, clients, onSubmit, onCancel }) {
   const [name, setName] = useState(data?.employee.name || "");
   const [email, setEmail] = useState(data?.employee.email || "");
   const [phone, setPhone] = useState(data?.phone || "");
   const [department, setDepartment] = useState(data?.employee.organization || "");
+  const [clientId, setClientId] = useState(data?.clientId || "");
   const [error, setError] = useState("");
 
   if (!open || !data) return null;
@@ -793,11 +882,16 @@ function EditEmployeeModal({ open, data, busy, onSubmit, onCancel }) {
       setError("Name and email are required.");
       return;
     }
+    if (!clientManaged && data.isCustom && !clientId) {
+      setError("Select the client this employee belongs to.");
+      return;
+    }
     onSubmit({
       name: name.trim(),
       email: email.trim(),
       phone: phone.trim() || null,
       organization: department.trim() || null,
+      ...(!clientManaged && data.isCustom ? { clientId } : {}),
     });
   }
 
@@ -816,6 +910,15 @@ function EditEmployeeModal({ open, data, busy, onSubmit, onCancel }) {
         </p>
 
         <div className="mt-4 space-y-3">
+          {!clientManaged && data.isCustom && (
+            <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+              Client
+              <select value={clientId} onChange={(e) => setClientId(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal text-slate-800 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100" required>
+                <option value="">Select a client…</option>
+                {clients.map((client) => <option key={client.id} value={client.id}>{client.name} · {client.email}</option>)}
+              </select>
+            </label>
+          )}
           <FormField label="Name" type="text" value={name} onChange={(e) => setName(e.target.value)} />
           <FormField label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
           <FormField

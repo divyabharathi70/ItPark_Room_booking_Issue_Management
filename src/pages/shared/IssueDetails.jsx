@@ -6,7 +6,8 @@ import Icon from "../../components/icons/Icon";
 import StatusBadge from "../../components/booking/StatusBadge";
 import ConfirmDialog from "../../components/booking/ConfirmDialog";
 import IssueTimeline from "../../components/issues/IssueTimeline";
-import { getIssueById, updateIssue, ISSUE_STATUS } from "../../utils/issueStorage";
+import { ROLES } from "../../data/mockUsers";
+import { getIssueById, getIssuesForClient, updateIssue, ISSUE_STATUS } from "../../utils/issueStorage";
 
 function formatDateTime(iso) {
   if (!iso) return "—";
@@ -47,7 +48,9 @@ export default function IssueDetails() {
 
   if (issue === undefined) return null;
 
-  if (issue === null || issue.employeeId !== user.id) {
+  const clientId = user.clientId || (user.role === ROLES.CLIENT ? user.id : null);
+  const canView = issue && (issue.employeeId === user.id || (clientId && getIssuesForClient(clientId).some((item) => item.id === issue.id)));
+  if (!canView) {
     return (
       <div>
         <PageHeader title="Issue Not Found" />

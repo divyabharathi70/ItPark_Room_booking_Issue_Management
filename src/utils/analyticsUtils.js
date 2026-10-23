@@ -209,7 +209,6 @@ export function getBookingAnalytics(allBookings, range) {
   return {
     total: filtered.length,
     upcoming: filtered.filter(isUpcoming).length,
-    completed: filtered.filter((b) => b.bookingStatus === BOOKING_STATUS.COMPLETED).length,
     cancelled: filtered.filter((b) => b.bookingStatus === BOOKING_STATUS.CANCELLED).length,
     trend: buildTrend(filtered, "createdAt", range),
     statusDistribution: countBy(filtered, "bookingStatus", Object.values(BOOKING_STATUS)),

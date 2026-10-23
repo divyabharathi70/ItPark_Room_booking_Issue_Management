@@ -107,7 +107,6 @@ export default function AdminAnalytics() {
         <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <StatCard icon="clipboardList" label="Total Bookings" value={bookingStats.total} />
           <StatCard icon="clock" label="Upcoming" value={bookingStats.upcoming} tone="amber" />
-          <StatCard icon="checkCircle" label="Completed" value={bookingStats.completed} tone="emerald" />
           <StatCard icon="ban" label="Cancelled" value={bookingStats.cancelled} tone="rose" />
         </div>
         <div className="grid gap-4 lg:grid-cols-2">

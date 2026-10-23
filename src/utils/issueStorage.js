@@ -4,7 +4,7 @@
 
 import { getBookingsForClient, BOOKING_STATUS, PAYMENT_STATUS } from "./bookingStorage";
 import { MOCK_USERS, ROLES } from "../data/mockUsers";
-import { getWorkersByDepartment } from "../data/mockWorkers";
+import { getWorkerById, getWorkersByDepartment } from "../data/mockWorkers";
 import { createNotification, NOTIFICATION_TYPES } from "./notificationStorage";
 import { getRoomBlock, unblockRoom, blockRoom } from "./roomStatusStorage";
 import { publishSharedRecords } from "./sharedDataSync";
@@ -359,7 +359,11 @@ export function getIssuesForEmployee(userId) {
 }
 
 export const getIssuesForUser = getIssuesForEmployee;
-export const getIssuesForClient = getIssuesForEmployee;
+export function getIssuesForClient(clientId) {
+  return readAll()
+    .filter((issue) => issue.clientId === clientId || issue.employeeId === clientId)
+    .sort((a, b) => new Date(b.createdDate) - new Date(a.createdDate));
+}
 
 export function getIssueById(id) {
   return readAll().find((i) => i.id === id) || null;
@@ -497,18 +501,12 @@ export function buildIssueTimeline(issue) {
 
 export { LIFECYCLE_ORDER };
 
-/** Bookings an employee is allowed to attach a new issue to: their own
- * bookings that have actually been paid for and confirmed (or already
- * completed — the room having since been vacated is exactly when a lot of
- * facility issues get noticed and reported). Pending or cancelled bookings
- * never qualify. */
-export function getEligibleBookingsForIssue(employeeId, includePending = false) {
+/** Only admin-confirmed, paid bookings can be used to raise an issue. */
+export function getEligibleBookingsForIssue(employeeId) {
   return getBookingsForClient(employeeId).filter(
     (b) =>
-      (b.bookingStatus === BOOKING_STATUS.CONFIRMED ||
-        b.bookingStatus === BOOKING_STATUS.COMPLETED ||
-        (includePending && b.bookingStatus === BOOKING_STATUS.PENDING)) &&
-      (includePending || b.paymentStatus === PAYMENT_STATUS.PAID)
+      b.bookingStatus === BOOKING_STATUS.CONFIRMED &&
+      b.paymentStatus === PAYMENT_STATUS.PAID
   );
 }
 
@@ -798,7 +796,28 @@ export function resolveIssueByWorker(issueId, worker, { resolutionDescription, r
  * rather than running unconditionally, and a strict no-op once that worker
  * already has anything assigned, so it never overwrites real activity. */
 export function seedWorkerIssuesIfEmpty(workerId, workerName) {
-  const list = readAll();
+  let list = readAll();
+  let changed = false;
+  const seenSeedIds = new Set();
+  list = list.filter((issue) => {
+    if (!/^ISS-SEED\d+$/.test(issue.id || "")) return true;
+    if (seenSeedIds.has(issue.id)) {
+      changed = true;
+      return false;
+    }
+    seenSeedIds.add(issue.id);
+    const department = suggestDepartment(issue.category);
+    const correctWorker = pickWorkerForDepartment(department);
+    if (correctWorker && (issue.assignedWorkerId !== correctWorker.id || issue.assignedDepartment !== department)) {
+      issue.assignedWorkerId = correctWorker.id;
+      issue.assignedWorker = correctWorker.name;
+      issue.assignedDepartment = department;
+      issue.assignmentMethod = "AUTO";
+      changed = true;
+    }
+    return true;
+  });
+  if (changed) writeAll(list);
   const alreadyAssigned = list.some((i) => i.assignedWorkerId === workerId);
   if (alreadyAssigned) return;
 
@@ -918,7 +937,11 @@ export function seedWorkerIssuesIfEmpty(workerId, workerName) {
     },
   ];
 
-  const seeded = defs.map((d) => {
+  const workerDepartment = getWorkerById(workerId)?.department;
+  const workerDefs = workerDepartment
+    ? defs.filter((issue) => suggestDepartment(issue.category) === workerDepartment)
+    : [];
+  const seeded = workerDefs.map((d) => {
     const lastStage = d.stages[d.stages.length - 1];
     return {
       id: d.id,

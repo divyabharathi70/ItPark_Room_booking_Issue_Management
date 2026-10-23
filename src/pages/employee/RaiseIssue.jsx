@@ -70,8 +70,8 @@ export default function RaiseIssue() {
 
   useEffect(() => {
     seedBookingsIfEmpty();
-    seedEmployeeBookingsIfEmpty(user.id, user.name);
-    const bookings = getEligibleBookingsForIssue(user.id, user.role === ROLES.CLIENT);
+    if (!user.clientId) seedEmployeeBookingsIfEmpty(user.id, user.name);
+    const bookings = getEligibleBookingsForIssue(user.clientId || user.id);
     setEligibleBookings(bookings);
     // Deep-linked from My Bookings > Raise Issue: pre-select that booking
     // if it's actually one of this user's eligible bookings.
@@ -161,12 +161,9 @@ export default function RaiseIssue() {
       employeeName: user.name,
       reporterRole: user.role,
       organization: user.organization || "IT Park Internal Staff",
-      // Explicit client-identity fields (Raise Issue requirement): only
-      // populated when the reporter is actually a Client, and always
-      // derived from the logged-in session — never something the client
-      // can type in, so nobody can attach another client's identity to
-      // an issue.
-      clientId: user.role === ROLES.CLIENT ? user.id : null,
+      // Link issues to the client account when raised by a client or one
+      // of that client's employees. The identity comes from the session.
+      clientId: user.role === ROLES.CLIENT ? user.id : user.clientId || null,
       clientEmail: user.role === ROLES.CLIENT ? user.email : null,
       bookingId: selectedBooking.id,
       roomId: selectedBooking.roomId,

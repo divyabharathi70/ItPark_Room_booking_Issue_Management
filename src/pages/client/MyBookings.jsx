@@ -49,7 +49,7 @@ function formatDateLong(dateStr) {
   });
 }
 
-const TABS = ["All", "Pending", "Upcoming", "Confirmed", "Completed", "Cancelled"];
+const TABS = ["All", "Pending", "Upcoming", "Confirmed", "Cancelled"];
 
 /** A booking only ever shows as "Pending Approval" once it's actually been
  * paid — mirrors isPendingApproval() in Admin > Bookings. Display-only:
@@ -63,8 +63,7 @@ function bookingBadgeStatus(b) {
 
 /** A CONFIRMED booking whose start hasn't arrived yet — shown under the
  * "Upcoming" tab. Once it starts, it moves to "Confirmed" (still active,
- * not yet completed); once it ends, syncCompletedBookings() flips it to
- * COMPLETED. */
+ * not yet completed); it remains CONFIRMED after the booking ends. */
 function isUpcoming(b) {
   if (b.bookingStatus !== BOOKING_STATUS.CONFIRMED) return false;
   const startTs = toTimestamp(b.startDate, b.startTime);
@@ -121,7 +120,7 @@ export default function MyBookings() {
   // the exact rule the Raise Issue form itself uses, so the button here
   // never offers a booking the form would then reject.
   const raiseIssueEligibleIds = useMemo(
-    () => new Set(getEligibleBookingsForIssue(user.id, true).map((b) => b.id)),
+    () => new Set(getEligibleBookingsForIssue(user.id).map((b) => b.id)),
     // bookings is included so this recomputes after a status change (e.g.
     // admin confirms a booking, or it completes) without a page reload.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -129,14 +128,22 @@ export default function MyBookings() {
   );
 
   const filtered = useMemo(() => {
-    if (tab === "All") return bookings;
-    if (tab === "Pending") return bookings.filter((b) => b.bookingStatus === BOOKING_STATUS.PENDING);
-    if (tab === "Upcoming") return bookings.filter(isUpcoming);
+    const confirmedBookings = bookings.filter((b) => b.bookingStatus === BOOKING_STATUS.CONFIRMED);
+    const visibleBookings = bookings.filter((b) =>
+      b.bookingStatus !== BOOKING_STATUS.PENDING ||
+      !confirmedBookings.some((confirmedBooking) =>
+        (b.roomId && confirmedBooking.roomId && b.roomId === confirmedBooking.roomId) ||
+        (b.roomName && confirmedBooking.roomName &&
+          b.roomName.trim().toLowerCase() === confirmedBooking.roomName.trim().toLowerCase())
+      )
+    );
+    if (tab === "All") return visibleBookings;
+    if (tab === "Pending") return visibleBookings.filter((b) => b.bookingStatus === BOOKING_STATUS.PENDING);
+    if (tab === "Upcoming") return visibleBookings.filter(isUpcoming);
     if (tab === "Confirmed") {
-      return bookings.filter((b) => b.bookingStatus === BOOKING_STATUS.CONFIRMED && !isUpcoming(b));
+      return visibleBookings.filter((b) => b.bookingStatus === BOOKING_STATUS.CONFIRMED && !isUpcoming(b));
     }
-    if (tab === "Completed") return bookings.filter((b) => b.bookingStatus === BOOKING_STATUS.COMPLETED);
-    return bookings.filter((b) => b.bookingStatus === BOOKING_STATUS.CANCELLED);
+    return visibleBookings.filter((b) => b.bookingStatus === BOOKING_STATUS.CANCELLED);
   }, [bookings, tab]);
 
   function confirmCancel() {

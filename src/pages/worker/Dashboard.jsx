@@ -27,6 +27,17 @@ function formatDateTime(iso) {
   });
 }
 
+const QUEUE_PRIORITY_ORDER = [PRIORITY.CRITICAL, PRIORITY.HIGH, PRIORITY.MEDIUM, PRIORITY.LOW];
+
+function queuePriority(issue) {
+  const value = String(issue.priority || "").trim().toUpperCase();
+  return QUEUE_PRIORITY_ORDER.find((priority) => value === priority || value.includes(priority)) || null;
+}
+
+function newestFirst(issues) {
+  return [...issues].sort((a, b) => new Date(b.createdDate).getTime() - new Date(a.createdDate).getTime());
+}
+
 export default function WorkerDashboard() {
   const { user } = useAuth();
   const { notifications, markAsRead } = useNotifications();
@@ -63,6 +74,11 @@ export default function WorkerDashboard() {
     [issues]
   );
 
+  const queueIssues = useMemo(
+    () => issues.filter((i) => i.status !== ISSUE_STATUS.RESOLVED && i.status !== ISSUE_STATUS.CLOSED),
+    [issues]
+  );
+
   const stats = useMemo(() => {
     const newIssues = issues.filter((i) => i.status === ISSUE_STATUS.ASSIGNED);
     const inProgress = issues.filter((i) => i.status === ISSUE_STATUS.IN_PROGRESS);
@@ -83,14 +99,11 @@ export default function WorkerDashboard() {
   }, [issues, activeIssues]);
 
   const queue = useMemo(
-    () =>
-      [...activeIssues.filter((issue) => issue.assignmentMethod === "MANUAL")]
-        .sort((a, b) => {
-          const order = { [PRIORITY.CRITICAL]: 0, [PRIORITY.HIGH]: 1, [PRIORITY.MEDIUM]: 2, [PRIORITY.LOW]: 3 };
-          return (order[a.priority] ?? 9) - (order[b.priority] ?? 9);
-        })
-        .slice(0, 5),
-    [activeIssues]
+    () => [
+      ...QUEUE_PRIORITY_ORDER.flatMap((priority) => newestFirst(queueIssues.filter((issue) => queuePriority(issue) === priority))),
+      ...newestFirst(queueIssues.filter((issue) => queuePriority(issue) === null)),
+    ].slice(0, 5),
+    [queueIssues]
   );
 
   function handleStartWork(issue) {
@@ -136,7 +149,7 @@ export default function WorkerDashboard() {
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-slate-900">Your Priority Queue</h2>
-          <Link to="/worker/tasks" className="text-xs font-semibold text-indigo-600 hover:text-indigo-700">
+          <Link to="/worker/issues" className="text-xs font-semibold text-indigo-600 hover:text-indigo-700">
             View all
           </Link>
         </div>

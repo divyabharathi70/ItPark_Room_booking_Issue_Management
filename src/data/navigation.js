@@ -27,6 +27,7 @@ export const NAV_ITEMS = {
     { label: "Dashboard", path: "/client/dashboard", icon: "dashboard" },
     { label: "Book a Room", path: "/client/book-room", icon: "plusSquare", description: "Find and reserve an available room." },
     { label: "My Bookings", path: "/client/bookings", icon: "clipboardList", description: "View and manage your upcoming and past bookings." },
+    { label: "Employees", path: "/client/employees", icon: "briefcase", description: "Manage employees for your company." },
     { label: "My Issues", path: "/client/issues", icon: "alert", description: "Report a facility issue or track ones you've raised." },
     { label: "Notifications", path: "/client/notifications", icon: "bell", description: "Updates on your bookings and issues." },
     { label: "Profile", path: "/client/profile", icon: "user", description: "Manage your account details." },

@@ -24,7 +24,6 @@ export const BOOKING_STATUS = {
   PENDING: "PENDING",
   CONFIRMED: "CONFIRMED",
   CANCELLED: "CANCELLED",
-  COMPLETED: "COMPLETED",
 };
 
 export const PAYMENT_STATUS = {
@@ -519,19 +518,15 @@ export function rejectBooking(id) {
   return updated;
 }
 
-/** Lazily promotes CONFIRMED bookings whose end date/time has already
- * passed to COMPLETED. Call once on pages that display booking lists. */
+/** Converts legacy completed bookings back to CONFIRMED. Booking status
+ * remains CONFIRMED after the booked time has passed. */
 export function syncCompletedBookings() {
   const list = readAll();
-  const now = new Date();
   let changed = false;
   const updated = list.map((b) => {
-    if (b.bookingStatus === BOOKING_STATUS.CONFIRMED) {
-      const endTs = toTimestamp(b.endDate, b.endTime);
-      if (endTs !== null && endTs < now.getTime()) {
-        changed = true;
-        return { ...b, bookingStatus: BOOKING_STATUS.COMPLETED };
-      }
+    if (b.bookingStatus === "COMPLETED") {
+      changed = true;
+      return { ...b, bookingStatus: BOOKING_STATUS.CONFIRMED };
     }
     return b;
   });

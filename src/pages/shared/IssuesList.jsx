@@ -4,7 +4,8 @@ import { useAuth } from "../../context/AuthContext";
 import PageHeader from "../../components/layout/PageHeader";
 import Icon from "../../components/icons/Icon";
 import StatusBadge from "../../components/booking/StatusBadge";
-import { getIssuesForUser, ISSUE_STATUS, PRIORITY, ISSUES_EVENT } from "../../utils/issueStorage";
+import { ROLES } from "../../data/mockUsers";
+import { getIssuesForUser, getIssuesForClient, ISSUE_STATUS, PRIORITY, ISSUES_EVENT } from "../../utils/issueStorage";
 
 function formatDateTime(iso) {
   if (!iso) return "—";
@@ -50,7 +51,10 @@ export default function IssuesList() {
   const [view, setView] = useState("table"); // "table" | "cards" — table is the default on desktop
 
   useEffect(() => {
-    const refresh = () => setIssues(getIssuesForUser(user.id));
+    const refresh = () => {
+      const clientId = user.clientId || (user.role === ROLES.CLIENT ? user.id : null);
+      setIssues(clientId ? getIssuesForClient(clientId) : getIssuesForUser(user.id));
+    };
     refresh();
     window.addEventListener(ISSUES_EVENT, refresh);
     window.addEventListener("storage", refresh);
@@ -58,7 +62,7 @@ export default function IssuesList() {
       window.removeEventListener(ISSUES_EVENT, refresh);
       window.removeEventListener("storage", refresh);
     };
-  }, [user.id, location.key]);
+  }, [user.id, user.clientId, location.key]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

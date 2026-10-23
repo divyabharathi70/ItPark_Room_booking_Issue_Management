@@ -49,12 +49,11 @@ const EMPTY_FILTERS = { status: "All", room: "All", date: "" };
 
 // Friendly labels for the status filter dropdown. Order matches the
 // requested filter set: All, Pending
-// Approval, Confirmed, Completed, Cancelled.
+// Approval, Confirmed, Cancelled.
 const STATUS_FILTER_OPTIONS = [
   { value: "All", label: "All" },
   { value: BOOKING_STATUS.PENDING, label: "Pending Approval" },
   { value: BOOKING_STATUS.CONFIRMED, label: "Confirmed" },
-  { value: BOOKING_STATUS.COMPLETED, label: "Completed" },
   { value: BOOKING_STATUS.CANCELLED, label: "Cancelled" },
 ];
 
@@ -72,8 +71,8 @@ function bookingBadgeStatus(b) {
 
 /** Is `booking` currently in-progress right now (confirmed and the clock
  * is between its start and end)? Used only for the "Active" stat — it
- * doesn't change bookingStatus itself, which stays CONFIRMED until
- * syncCompletedBookings() promotes it after the end time passes. */
+ * doesn't change bookingStatus itself, which stays CONFIRMED after the
+ * booked time passes. */
 function isCurrentlyActive(booking) {
   if (booking.bookingStatus !== BOOKING_STATUS.CONFIRMED) return false;
   const now = Date.now();
@@ -103,12 +102,12 @@ export default function AdminBookings() {
   function refresh() {
     let current = getAllBookings();
     const needsUpdate = current.some((b) =>
-      b.bookingStatus === BOOKING_STATUS.COMPLETED || b.paymentStatus === "PENDING"
+      b.bookingStatus === "COMPLETED" || b.paymentStatus === "PENDING"
     );
     if (needsUpdate) {
       const updates = current.flatMap((b) => {
         const patch = {
-          ...(b.bookingStatus === BOOKING_STATUS.COMPLETED ? { bookingStatus: BOOKING_STATUS.PENDING } : {}),
+          ...(b.bookingStatus === "COMPLETED" ? { bookingStatus: BOOKING_STATUS.CONFIRMED } : {}),
           ...(b.paymentStatus === "PENDING" ? { paymentStatus: "PAID" } : {}),
         };
         return Object.keys(patch).length ? [{ id: b.id, patch }] : [];
@@ -150,9 +149,8 @@ export default function AdminBookings() {
       (b) => b.bookingStatus === BOOKING_STATUS.CONFIRMED && !isCurrentlyActive(b)
     ).length;
     const active = bookings.filter(isCurrentlyActive).length;
-    const completed = bookings.filter((b) => b.bookingStatus === BOOKING_STATUS.COMPLETED).length;
     const cancelled = bookings.filter((b) => b.bookingStatus === BOOKING_STATUS.CANCELLED).length;
-    return { total, pendingApproval, upcoming, active, completed, cancelled };
+    return { total, pendingApproval, upcoming, active, cancelled };
   }, [bookings]);
 
   const filtered = useMemo(() => {
@@ -249,7 +247,6 @@ export default function AdminBookings() {
         <StatCard icon="alert" label="Pending Approval" value={stats.pendingApproval} tone="amber" />
         <StatCard icon="clock" label="Upcoming" value={stats.upcoming} tone="amber" />
         <StatCard icon="checkCircle" label="Active Now" value={stats.active} tone="emerald" />
-        <StatCard icon="calendar" label="Completed" value={stats.completed} tone="slate" />
         <StatCard icon="ban" label="Cancelled" value={stats.cancelled} tone="rose" />
       </div>
 

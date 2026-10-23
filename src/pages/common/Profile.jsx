@@ -28,11 +28,12 @@ function resizeImage(file) {
 }
 
 export default function Profile() {
-  const { user, updateProfile } = useAuth();
+  const { user, updateProfile, changePassword } = useAuth();
   const [form, setForm] = useState({ name: user?.name || "", phone: user?.phone || "", organization: user?.organization || "", department: user?.department || "" });
   const [picture, setPicture] = useState(user?.profilePicture || "");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
 
   useEffect(() => {
     setForm({ name: user?.name || "", phone: user?.phone || "", organization: user?.organization || "", department: user?.department || "" });
@@ -68,11 +69,29 @@ export default function Profile() {
       setNotice("Name is required.");
       return;
     }
+    const changingPassword = Object.values(passwordForm).some(Boolean);
+    if (changingPassword) {
+      if (!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
+        setNotice("Enter your current password and complete both new password fields.");
+        return;
+      }
+      if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+        setNotice("New passwords do not match.");
+        return;
+      }
+      const result = changePassword({ currentPassword: passwordForm.currentPassword, newPassword: passwordForm.newPassword });
+      if (!result.ok) {
+        setNotice(result.error);
+        return;
+      }
+    }
     updateProfile({ name: form.name.trim(), phone: form.phone.trim() || null, organization: form.organization.trim() || null, department: form.department.trim() || null, profilePicture: picture || null });
-    setNotice("Profile saved.");
+    setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
+    setNotice(changingPassword ? "Profile and password saved." : "Profile saved.");
   }
 
   const isWorker = user?.role === ROLES.WORKER;
+  const canChangePassword = [ROLES.CLIENT, ROLES.EMPLOYEE, ROLES.WORKER].includes(user?.role);
   return (
     <div className="mx-auto w-full max-w-2xl">
       <div className="mb-6 text-center">
@@ -108,6 +127,23 @@ export default function Profile() {
             <label className="text-sm text-blueprint-muted">{user?.role === ROLES.CLIENT ? "Company / organization" : "Organization"}<input className={fieldClass} name="organization" value={form.organization} onChange={change} /></label>
           )}
         </div>
+        {canChangePassword && (
+          <section className="mt-7 border-t border-blueprint-line pt-6">
+            <h2 className="text-base font-semibold text-blueprint-text">Change password</h2>
+            <p className="mt-1 text-sm text-blueprint-muted">Use your new password the next time you sign in.</p>
+            <div className="mt-4 grid gap-5 sm:grid-cols-2">
+              <label className="text-sm text-blueprint-muted sm:col-span-2">Current password
+                <input className={fieldClass} type="password" autoComplete="current-password" value={passwordForm.currentPassword} onChange={(e) => setPasswordForm((p) => ({ ...p, currentPassword: e.target.value }))} />
+              </label>
+              <label className="text-sm text-blueprint-muted">New password
+                <input className={fieldClass} type="password" autoComplete="new-password" minLength={6} value={passwordForm.newPassword} onChange={(e) => setPasswordForm((p) => ({ ...p, newPassword: e.target.value }))} />
+              </label>
+              <label className="text-sm text-blueprint-muted">Confirm new password
+                <input className={fieldClass} type="password" autoComplete="new-password" minLength={6} value={passwordForm.confirmPassword} onChange={(e) => setPasswordForm((p) => ({ ...p, confirmPassword: e.target.value }))} />
+              </label>
+            </div>
+          </section>
+        )}
         <div className="mt-7 flex flex-col items-center gap-3 border-t border-blueprint-line pt-6">
           <button type="submit" className="w-full rounded-md bg-blueprint-amber px-5 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 sm:w-auto sm:min-w-[200px]">Save changes</button>
           {notice && <p role="status" className="text-sm text-blueprint-muted">{notice}</p>}

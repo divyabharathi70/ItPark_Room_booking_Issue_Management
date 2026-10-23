@@ -85,6 +85,7 @@ const ROUTE_OVERRIDES = {
   },
   [ROLES.CLIENT]: {
     "/client/book-room": BookingNew,
+    "/client/employees": (props) => <AdminEmployees {...props} clientManaged />,
     "/client/bookings": MyBookings,
     "/client/issues": ClientMyIssues,
     "/client/notifications": Notifications,

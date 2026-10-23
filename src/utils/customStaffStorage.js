@@ -54,6 +54,7 @@ export function addCustomStaff(role, data) {
   const record = {
     id: nextId(role),
     role,
+    clientId: data.clientId || null,
     name: (data.name || "").trim(),
     email: (data.email || "").trim(),
     phone: (data.phone || "").trim() || null,
